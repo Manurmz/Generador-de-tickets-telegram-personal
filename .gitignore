@@ -189,3 +189,5 @@ pip-selfcheck.json
 
 # Omite los pdf generados
 ticket*.pdf
+#omite todos los scripts iniciados con prueva_
+prueba_*.py

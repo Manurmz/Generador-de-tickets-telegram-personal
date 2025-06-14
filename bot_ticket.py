@@ -186,5 +186,20 @@ def obtener_folio_y_generar(message, info_personalizada):
         print(f"Error en obtener_folio_y_generar: {e}")
         bot.reply_to(message, 'Ocurrió un error final al generar el ticket. Por favor, intenta de nuevo.')
 
+user_id = user_id = env_vars.get("USER_ID_TELEGRAM")  # Reemplaza con el ID real
+
+try:
+    bot.send_message(
+        chat_id=user_id,
+        text="Hola de nuevo! este mensaje es para avisarte que el bot esta online 😊"
+    )
+    print("Mensaje enviado exitosamente!")
+except telebot.apihelper.ApiTelegramException as e:
+    if e.result.status_code == 403:
+        print("Error: Usuario bloqueó el bot o nunca inició chat")
+    elif e.result.status_code == 400:
+        print("Error: ID inválido o formato incorrecto")
+    else:
+        print(f"Error desconocido: {e}")
 
 bot.infinity_polling()
