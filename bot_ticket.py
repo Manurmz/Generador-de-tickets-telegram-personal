@@ -2,6 +2,7 @@ from dotenv import dotenv_values
 import telebot
 # from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
+from datetime import datetime
 
 from crear_pdf import crear_pdf
 from OCR_imagen import detect_text
@@ -36,10 +37,10 @@ def handle_photo(mensaje):
     downloaded_file = bot.download_file(file_info.file_path)
 
     array_datos = detect_text(downloaded_file)
-    print(array_datos)
+    #print(array_datos)
     #generar json con los datos a inyectar
     data = extraer_datos_recibo(array_datos)
-    print(data)
+    #print(data)
     # Enviar mensaje
     precio_recibo = data['monto']
     respuesta = f"¿El valor del recibo es de {precio_recibo}?"
@@ -86,5 +87,104 @@ def handle_message(message):
 @bot.message_handler(commands=['status'])
 def send_welcome(message):
     bot.reply_to(message, "Estado activo")
+
+# Maneja el comando '/ticket'
+@bot.message_handler(commands=['ticket'])
+def ticket_personalizado(message):
+    """
+    Inicia el proceso para crear un ticket personalizado solicitando el primer dato.
+    """
+    print('Comando /ticket recibido')
+    # Se crea un diccionario vacío para almacenar los datos del ticket
+    info_personalizada = {}
+    msg = bot.send_message(message.chat.id, "🤖 Creación de Ticket Personalizado 🤖\n\nPor favor, dime el nombre del servicio:")
+    # Se registra el siguiente paso para que la función obtener_servicio maneje la respuesta
+    bot.register_next_step_handler(msg, obtener_servicio, info_personalizada)
+
+def obtener_servicio(message, info_personalizada):
+    """
+    Recibe el nombre del servicio y solicita el número de referencia.
+    """
+    try:
+        servicio = message.text
+        info_personalizada['servicio'] = servicio
+        msg = bot.send_message(message.chat.id, f"✅ Servicio: {servicio}\n\nAhora, introduce la referencia:")
+        bot.register_next_step_handler(msg, obtener_referencia, info_personalizada)
+    except Exception as e:
+        print(f"Error en obtener_servicio: {e}")
+        bot.reply_to(message, 'Ocurrió un error. Por favor, intenta de nuevo con /ticket.')
+
+def obtener_referencia(message, info_personalizada):
+    """
+    Recibe la referencia y solicita el monto.
+    """
+    try:
+        referencia = message.text
+        info_personalizada['referencia'] = referencia
+        msg = bot.send_message(message.chat.id, f"✅ Referencia: {referencia}\n\nAhora, introduce el monto (ej. 1564):")
+        bot.register_next_step_handler(msg, obtener_monto, info_personalizada)
+    except Exception as e:
+        print(f"Error en obtener_referencia: {e}")
+        bot.reply_to(message, 'Ocurrió un error. Por favor, intenta de nuevo con /ticket.')
+
+def obtener_monto(message, info_personalizada):
+    """
+    Recibe y valida el monto, luego solicita la guía.
+    """
+    try:
+        # Valida que el monto sea un número
+        if not message.text.isdigit():
+            msg = bot.send_message(message.chat.id, "❌ Error: El monto debe ser un valor numérico.\nPor favor, introduce el monto de nuevo:")
+            bot.register_next_step_handler(msg, obtener_monto, info_personalizada)
+            return
+            
+        monto = int(message.text)
+        info_personalizada['monto'] = monto
+        msg = bot.send_message(message.chat.id, f"✅ Monto: ${monto:,.2f} MXN\n\nAhora, introduce el folio:")
+        bot.register_next_step_handler(msg, obtener_folio_y_generar, info_personalizada)
+    except Exception as e:
+        print(f"Error en obtener_monto: {e}")
+        bot.reply_to(message, 'Ocurrió un error. Por favor, intenta de nuevo con /ticket.')
+
+# def obtener_guia(message, info_personalizada):
+#     """
+#     Recibe la guía y solicita el folio.
+#     """
+#     try:
+#         guia = message.text
+#         info_personalizada['guia'] = guia
+#         msg = bot.send_message(message.chat.id, f"✅ Guía: {guia}\n\nPor último, introduce el folio:")
+#         bot.register_next_step_handler(msg, obtener_folio_y_generar, info_personalizada)
+#     except Exception as e:
+#         print(f"Error en obtener_guia: {e}")
+#         bot.reply_to(message, 'Ocurrió un error. Por favor, intenta de nuevo con /ticket.')
+
+def obtener_folio_y_generar(message, info_personalizada):
+    """
+    Recibe el folio, completa los datos, genera el PDF y lo envía.
+    """
+    try:
+        folio = message.text
+        info_personalizada['folio'] = folio
+
+        # Agrega la hora actual del sistema
+        info_personalizada['hora'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        bot.send_message(message.chat.id, f"✅ Folio: {folio}\n\nTodos los datos han sido recibidos. Generando tu ticket...")
+
+        # Llama a la función para crear el PDF con los datos recolectados
+        nombre_pdf = crear_pdf(info_personalizada)
+        directorio_script = os.path.dirname(os.path.realpath(__file__))
+        ruta_pdf = os.path.join(directorio_script, nombre_pdf)
+
+        # Envía el documento PDF generado
+        with open(ruta_pdf, 'rb') as pdf_file:
+            bot.send_document(message.chat.id, pdf_file)
+        print('Ticket personalizado enviado exitosamente.')
+
+    except Exception as e:
+        print(f"Error en obtener_folio_y_generar: {e}")
+        bot.reply_to(message, 'Ocurrió un error final al generar el ticket. Por favor, intenta de nuevo.')
+
 
 bot.infinity_polling()
