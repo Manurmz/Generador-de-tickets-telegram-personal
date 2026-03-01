@@ -268,7 +268,8 @@ def _extraer_datos_ventamovil(data_list, meses_map):
 
 def _extraer_datos_cashi(data_list, meses_map):
     """Extrae datos específicos de recibos tipo Cashi/Otro (CSH...)."""
-    resultado_cashi = {"servicio": "CFE"} # Default assumption for Cashi
+    servicio:str = extraer_servicio(data_list)
+    resultado_cashi = {"servicio": servicio.upper()} # Default assumption for Cashi
 
     # Referencia (Look for a likely contract number - often 12 digits, but be flexible)
     # Prioritize longer digit sequences that aren't likely the folio or amount.
@@ -376,6 +377,33 @@ def _extraer_datos_cashi(data_list, meses_map):
     return resultado_cashi
 
 
+def extraer_servicio(array):
+    """
+    Toma los primeros 14 elementos de un array y cuenta cuántos se repiten.
+    
+    Args:
+        array: Lista de elementos (pueden ser strings, números, etc.)
+    
+    Returns:
+        dict: Diccionario con los elementos como claves y su frecuencia como valores
+    """
+    # Tomar los primeros 14 elementos
+    primeros_14 = array[:14]
+    
+    # Crear un diccionario para contar las frecuencias
+    frecuencia = {}
+    
+    # Contar la frecuencia de cada elemento
+    for elemento in primeros_14:
+        if elemento in frecuencia:
+            frecuencia[elemento] += 1
+        else:
+            frecuencia[elemento] = 1
+    
+    repetidos = {k: v for k, v in frecuencia.items() if v > 1}
+    #print(f"\nElementos que se repiten ({len(repetidos)}):", repetidos)
+    return list(repetidos.keys())[0]
+
 # --- Función Principal ---
 
 def extraer_datos_recibo(datos_entrada: list[str]) -> dict | None:
@@ -392,7 +420,7 @@ def extraer_datos_recibo(datos_entrada: list[str]) -> dict | None:
     if "bbva" in datos_str_lower or "guía cie" in datos_str_lower:
         # print("DEBUG: Detected as BBVA")
         resultado = _extraer_datos_bbva(datos_entrada, MESES)
-    elif "ventamovil" in datos_str_lower:
+    elif "ventamovil" in datos_str_lower or "recargame" in datos_str_lower:
         # print("DEBUG: Detected as Ventamovil")
         resultado = _extraer_datos_ventamovil(datos_entrada, MESES)
     # Check for Cashi identifiers ('cashi', 'CSH...')
@@ -433,36 +461,22 @@ def extraer_datos_recibo(datos_entrada: list[str]) -> dict | None:
     return final_result
 
 if __name__ == "__main__":
-# --- Ejemplos de Test ---
-    test_case_cashi = ['8:58', 'M', '№', '63', '%', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '679950709602', '15', 'de', 'abril', '2025.', '08:58', 'a', '.', 'm', '.', 'CSHOSURLKU643173323', '$', '330.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '330.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '788145', 'CSHOSURLKU643173323', '-', '$', '330.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.']
-    test_case_ventamovil = ['TRANSACCION', 'EXITOSA', '11/04/2025', '11:25:37', '$', '222', 'CFE', '01679121155098250424000000222', '8', 'Folio', ':', '723241591', 'Whatsapp', 'Compartir', 'Imprimir', '+', ':', '=', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!']
-    test_case_bbva = ['BBVA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Número', 'de', 'convenio', '000582122', 'Referencia', '3250130454645662219', 'Importe', '73', 'Comisión', '$', '00.00', 'Concepto', 'Pago', 'servicio', 'de', 'agua', 'Fecha', 'de', 'operación', '31', 'de', 'marzo', 'de', '2025', ',', '09:24', 'p.m.', 'h', 'Guía', 'CIE', '0980620', 'Folio', '2444532488', 'Número', 'de', 'operación', '2444532488', 'BBVA', 'Origin', 'Cuenta', 'de', 'Ahorro', 'Número', 'de', 'cuenta', '•', '9123']
-    test_case_ventamovil_2 = ['TRANSACCION', 'EXITOSA', '17/04/2025', '05:12:40', '$', '370', 'IZZI', 'TELECOM', '0372847228', 'Folio', ':', '105798858', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'Π', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!']
-    test_case_cashi_2 = ['10:44', 'M.', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', 'OMIMI', '11', '%', '679160508372', '16', 'de', 'febrero', '2025', '•', '12:19', 'p', '.', 'm', '.', 'CSHOSRSG8Y707269475', '$', '66.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '66.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '354815', 'CSHOSRSG8Y707269475', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.', '-', '$', '66.00']
-    # Test case BBVA 2, notice 'Importe' '$' '144.00' sequence and lack of time 'am/pm' marker
-    test_case_bbva_2 = ['BBVA', 'PAGAR', 'SERVICIO', 'OPERACION', 'EXITOSA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Núm', '.', 'de', 'convenio', '000582122', 'Referencia', '3240362098244425201', 'Fecha', '10', 'diciembre', '2024', 'Hora', '23:42', 'h', 'Tipo', 'de', 'operación', 'Pagar', 'servicio', 'o', 'impuesto', 'Concepto', '3240362098244425201', 'Guía', 'CIE', '5973773', 'Folio', '2862930031', 'ORIGEN', 'Cuenta', 'corriente', '+9123', 'VALOR', 'Importe', '$', '144.00', 'Comisión', 'e', 'impuestos', '$', '0.00', 'Forma', 'de', 'pago', 'Cuenta', 'de', 'origen', 'Cuenta', 'corriente']
+    # --- Definición de tests como diccionario de arrays ---
+    tests = {
+        "Cashi": ['8:58', 'M', '№', '63', '%', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '679950709602', '15', 'de', 'abril', '2025.', '08:58', 'a', '.', 'm', '.', 'CSHOSURLKU643173323', '$', '330.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '330.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '788145', 'CSHOSURLKU643173323', '-', '$', '330.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Ventamovil": ['TRANSACCION', 'EXITOSA', '11/04/2025', '11:25:37', '$', '222', 'CFE', '01679121155098250424000000222', '8', 'Folio', ':', '723241591', 'Whatsapp', 'Compartir', 'Imprimir', '+', ':', '=', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
+        "BBVA": ['BBVA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Número', 'de', 'convenio', '000582122', 'Referencia', '3250130454645662219', 'Importe', '73', 'Comisión', '$', '00.00', 'Concepto', 'Pago', 'servicio', 'de', 'agua', 'Fecha', 'de', 'operación', '31', 'de', 'marzo', 'de', '2025', ',', '09:24', 'p.m.', 'h', 'Guía', 'CIE', '0980620', 'Folio', '2444532488', 'Número', 'de', 'operación', '2444532488', 'BBVA', 'Origin', 'Cuenta', 'de', 'Ahorro', 'Número', 'de', 'cuenta', '•', '9123'],
+        "Ventamovil 2": ['TRANSACCION', 'EXITOSA', '17/04/2025', '05:12:40', '$', '370', 'IZZI', 'TELECOM', '0372847228', 'Folio', ':', '105798858', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'Π', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
+        "Cashi 2": ['10:44', 'M.', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', 'OMIMI', '11', '%', '679160508372', '16', 'de', 'febrero', '2025', '•', '12:19', 'p', '.', 'm', '.', 'CSHOSRSG8Y707269475', '$', '66.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '66.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '354815', 'CSHOSRSG8Y707269475', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.', '-', '$', '66.00'],
+        "BBVA 2": ['BBVA', 'PAGAR', 'SERVICIO', 'OPERACION', 'EXITOSA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Núm', '.', 'de', 'convenio', '000582122', 'Referencia', '3240362098244425201', 'Fecha', '10', 'diciembre', '2024', 'Hora', '23:42', 'h', 'Tipo', 'de', 'operación', 'Pagar', 'servicio', 'o', 'impuesto', 'Concepto', '3240362098244425201', 'Guía', 'CIE', '5973773', 'Folio', '2862930031', 'ORIGEN', 'Cuenta', 'corriente', '+9123', 'VALOR', 'Importe', '$', '144.00', 'Comisión', 'e', 'impuestos', '$', '0.00', 'Forma', 'de', 'pago', 'Cuenta', 'de', 'origen', 'Cuenta', 'corriente'],
+        "Megacable": ['TRANSACCION', 'EXITOSA', '17/04/2025', '05:12:40', '$', '370', 'IZZI', 'TELECOM', '0372847228', 'Folio', ':', '105798858', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'Π', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
+        "Vetv": ['TRANSACCION', 'EXITOSA', '04/01/2026', '01:37:17', '$', '269', 'VETV', '501247026120', 'Folio', ':', '3138313033', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'recargame', '-', 'app', '!'],
+        "Izzi": ['7:52', '<', '.izz', '!', 'Contrato', 'Izzi', 'Izzi', 'M.', 'Recibo', 'MIMI', '18', '%', 'O', '0372847228', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', '14', 'de', 'enero', '2026', '07:50', 'p.m.', 'CSHOT8VUGZ250138436', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '$', '470.00', 'Gratis', '-', '$', '470.00', 'Saldo', 'principal', 'cashi', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '818353', 'CSHOT8VUGZ250138436', '-', '$', '470.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.']
+    }
+    
+    # --- Ejecutar todos los tests iterando sobre el diccionario ---
+    for test_name, test_data in tests.items():
+        print(f"\n--- Test {test_name} ---")
+        resultado = extraer_datos_recibo(test_data)
+        print(resultado)
 
-    # --- Ejecutar Tests ---
-    print("--- Test Cashi ---")
-    resultado_cashi = extraer_datos_recibo(test_case_cashi)
-    print(resultado_cashi)
-
-    print("\n--- Test Ventamovil ---")
-    resultado_ventamovil = extraer_datos_recibo(test_case_ventamovil)
-    print(resultado_ventamovil)
-
-    print("\n--- Test BBVA ---")
-    resultado_bbva = extraer_datos_recibo(test_case_bbva)
-    print(resultado_bbva)
-
-    print("\n--- Test Ventamovil 2---")
-    resultado_ventamovil_2 = extraer_datos_recibo(test_case_ventamovil_2)
-    print(resultado_ventamovil_2)
-
-    print("\n--- Test Cashi 2---")
-    resultado_cashi_2 = extraer_datos_recibo(test_case_cashi_2)
-    print(resultado_cashi_2)
-
-    print("\n--- Test BBVA 2---")
-    resultado_bbva_2 = extraer_datos_recibo(test_case_bbva_2)
-    print(resultado_bbva_2)

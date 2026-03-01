@@ -191,3 +191,5 @@ pip-selfcheck.json
 ticket*.pdf
 #omite todos los scripts iniciados con prueva_
 prueba_*.py
+#omite las imagenes generadas
+/imagenes_ticket
