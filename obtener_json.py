@@ -10,6 +10,16 @@ MESES = {
 
 BBVA_COMPROBANTE_SEQ = ['COMPROBANTE', 'DE', 'LA', 'OPERACIÓN', 'GENERAL']
 
+# Palabras vacías que no deben considerarse como nombre de servicio
+PALABRAS_VACIAS = {'DE', 'LA', 'DEL', 'Y', 'E', 'EL', 'LOS', 'LAS', 'UN', 'UNA',
+                   'POR', 'PARA', 'CON', 'SIN', 'SOBRE', 'ENTRE', 'MEDIANTE',
+                   'CONTRA', 'HASTA', 'DESDE', 'EN', 'A', 'O', 'U', 'QUE', 'COMO',
+                   'CUANDO', 'DONDE', 'QUIEN', 'CUAL', 'CUYO', 'ESTE', 'ESTA',
+                   'ESTOS', 'ESTAS', 'ESE', 'ESA', 'ESOS', 'ESAS', 'AQUEL',
+                   'AQUELLA', 'AQUELLOS', 'AQUELLAS', 'MI', 'TU', 'SU', 'NUESTRO',
+                   'VUESTRO', 'SUS', 'MIS', 'TUS', 'MI', 'TU', 'TE', 'SE', 'LE',
+                   'LES', 'NOS', 'OS', 'LO', 'LA', 'LOS', 'LAS'}
+
 # --- Funciones Auxiliares ---
 
 def _parsear_fecha_hora(data_list, meses_map):
@@ -35,69 +45,60 @@ def _parsear_fecha_hora(data_list, meses_map):
     date_found = False
     # Scan for date parts: "DD de mes [de] YYYY"
     for i in range(len(data_list) - 2):
-        if (data_list[i].isdigit() and len(data_list[i]) <= 2 and # Ensure it's a potential day
+        if (data_list[i].isdigit() and len(data_list[i]) <= 2 and
             data_list[i+1].lower() == 'de' and
             data_list[i+2].lower() in meses_map):
             year_index = -1
-            # Look for 'de YYYY' or just 'YYYY' after the month
             if i + 4 < len(data_list) and data_list[i+3].lower() == 'de': year_index = i + 4
             elif i + 3 < len(data_list): year_index = i + 3
 
             if year_index != -1:
-                # Allow optional punctuation after year (like '.')
                 year_match = re.match(r'(\d{4})\.?,?', data_list[year_index])
                 if year_match:
                     day = data_list[i].zfill(2)
                     month_name = data_list[i+2].lower()
                     year = year_match.group(1)
                     date_found = True
-                    break # Date found, stop searching
+                    break
 
-    # Scan for time parts: "HH:MM" or "HH:MM:SS" and AM/PM marker nearby
     time_found = False
-    # Make seconds optional, handle potential extra chars like 'h' or '.' after time
     time_pattern = re.compile(r'(\d{1,2}):(\d{2})(?::(\d{2}))?')
     for i, item in enumerate(data_list):
         match_time = time_pattern.match(item)
         if match_time:
             hour_cand, minute_cand, second_cand = match_time.groups()
-            # Use found seconds if available, default to 00 otherwise
             second = second_cand if second_cand else "00"
             hour = hour_cand
             minute = minute_cand
             time_found = True
 
-            # Check for AM/PM marker *after* the time element
-            # Look ahead a few elements for 'am' or 'pm' (case-insensitive, ignore dots)
             marker_area = ""
-            lookahead_limit = min(i + 4, len(data_list)) # Look up to 3 elements ahead
+            lookahead_limit = min(i + 4, len(data_list))
             for j in range(i + 1, lookahead_limit):
                 marker_area += data_list[j].lower().replace(".", "")
             
             if 'pm' in marker_area: is_pm = True
             elif 'am' in marker_area: is_am = True
             
-            break # Time found, stop searching
+            break
 
-    # Assemble the date and time
     if date_found and time_found:
         month = meses_map.get(month_name)
         if month:
             try:
                 hour_int = int(hour)
-                # Adjust hour for PM/AM
                 if is_pm and hour_int != 12: hour_int += 12
-                elif is_am and hour_int == 12: hour_int = 0 # Midnight case
+                elif is_am and hour_int == 12: hour_int = 0
                 
                 hour = str(hour_int).zfill(2)
                 minute = minute.zfill(2)
-                second = second.zfill(2) # Ensure seconds are also two digits
+                second = second.zfill(2)
 
                 dt_obj = datetime.strptime(f"{year}-{month}-{day} {hour}:{minute}:{second}", "%Y-%m-%d %H:%M:%S")
                 return dt_obj.strftime("%Y-%m-%d %H:%M:%S")
-            except ValueError: return None # Handle potential datetime conversion errors
-        else: return None # Month name wasn't valid
-    else: return None # Date or time components not found
+            except ValueError: return None
+        else: return None
+    else: return None
 
 def _list_contains_sequence(data_list, sequence):
     """Checks if a list contains a specific sequence of elements."""
@@ -110,78 +111,52 @@ def _extraer_datos_bbva(data_list, meses_map):
     """Extrae datos específicos de recibos tipo BBVA."""
     resultado_bbva = {"servicio": "SAPAO"} # Default service assumption
 
-    # Check for the specific sequence (optional action)
     if _list_contains_sequence(data_list, BBVA_COMPROBANTE_SEQ):
-         # print("DEBUG: BBVA Comprobante General sequence detected.") # For debugging
-         pass # No specific action required based on sequence detection yet
+         pass
 
-    # Referencia (flexible, check if numeric after keyword)
     try:
         idx_ref = data_list.index("Referencia")
-        # Check if the next element is a digit string (potentially long)
         if idx_ref + 1 < len(data_list) and re.match(r'^\d+$', data_list[idx_ref + 1]):
              resultado_bbva["referencia"] = data_list[idx_ref + 1]
     except ValueError: pass
 
-    # --- CORRECCIÓN MONTO ---
-    # Monto (Prioritize value after 'Importe', fallback to '$')
     monto_found = False
     try:
-        # Find 'Importe' or 'IMPORTE' keyword
         idx_imp_kw = -1
         try:
-            # Find the first occurrence of 'Importe' case-insensitively
             idx_imp_kw = next(i for i, x in enumerate(data_list) if x.upper() == "IMPORTE")
-        except StopIteration: pass # Keyword not found
+        except StopIteration: pass
 
-        # 1. Try element immediately after 'Importe' if keyword was found
         if idx_imp_kw != -1 and idx_imp_kw + 1 < len(data_list):
             potential_monto = data_list[idx_imp_kw + 1]
-            # Use regex to check if it's a valid number format (int or float), ignore commas
             monto_match_direct = re.match(r'^(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?$', potential_monto)
             if monto_match_direct:
-                value_str = potential_monto.replace(',', '') # Remove commas for float conversion
+                value_str = potential_monto.replace(',', '')
                 try:
                     resultado_bbva["monto"] = int(float(value_str))
                     monto_found = True
-                except ValueError: pass # Handle potential conversion errors if format is weird despite regex
+                except ValueError: pass
 
-        # 2. Fallback: Search for '$' followed by a number if not found via 'Importe'
         if not monto_found:
-            for i in range(len(data_list) - 1): # Search entire list
+            for i in range(len(data_list) - 1):
                 if data_list[i] == '$':
-                    # Check the element *after* '$'
                     potential_monto_after_dollar = data_list[i+1]
-                    # Regex allows optional sign, digits, optional comma separators, optional decimal part
                     monto_match_dollar = re.match(r'(-?)(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?', potential_monto_after_dollar)
                     if monto_match_dollar:
                         sign, integer_part, decimal_part = monto_match_dollar.groups()
-                        # Reconstruct the number string without commas for conversion
                         value_str = integer_part.replace(',', '') + (decimal_part if decimal_part else '')
                         try:
                             resultado_bbva["monto"] = int(float(value_str))
                             monto_found = True
-                            # IMPORTANT: Break *only* if we are reasonably sure this is the main amount.
-                            # Heuristic: If 'Importe' was found earlier, the '$' amount might be commission.
-                            # If 'Importe' was *not* found, this '$' amount is our best guess.
-                            # Or, if the amount after '$' is substantial (not 0.00), likely the main amount.
                             if float(value_str) != 0.0:
-                                break # Found a non-zero amount after '$', assume it's the one.
-                        except ValueError: pass # Handle potential conversion errors
+                                break
+                        except ValueError: pass
+    except Exception: pass
 
-    except Exception as e:
-        # print(f"DEBUG: Error extracting monto for BBVA: {e}") # Optional debug
-        pass
-    # --- FIN CORRECCIÓN MONTO ---
-
-
-    # Convenio (fallback a Numero de convenio)
     convenio_found = False
     try:
          idx_conv_kw = -1
-         # Find 'Número'/'Núm.', 'de', 'convenio' sequence (flexible)
          for i in range(len(data_list) - 2):
-             # Allow 'Núm.' or 'Número'
              if (data_list[i].lower().startswith("núm") and
                  data_list[i+1].lower() == "de" and
                  data_list[i+2].lower() == "convenio"):
@@ -189,28 +164,22 @@ def _extraer_datos_bbva(data_list, meses_map):
          if idx_conv_kw != -1 and idx_conv_kw + 1 < len(data_list) and re.match(r'^\d+$', data_list[idx_conv_kw+1]):
             resultado_bbva["convenio"] = data_list[idx_conv_kw+1]
             convenio_found = True
-         # Add check for 'CIE', ':', 'convenio' pattern from new test case
          elif not convenio_found:
               for i in range(len(data_list) - 2):
-                 # Look for CIE : <digits>
                  if (data_list[i].upper() == "CIE" and
                      data_list[i+1] == ":" and
                      re.match(r'^\d+$', data_list[i+2])):
                      resultado_bbva["convenio"] = data_list[i+2]
                      convenio_found = True; break
-
     except ValueError: pass
 
-    # --- CORRECCIÓN GUIA CIE ---
-    # Guia (based on Guía CIE)
     try:
-        idx_guia = data_list.index("Guía") # Find the word "Guía"
+        idx_guia = data_list.index("Guía")
         if idx_guia + 2 < len(data_list) and data_list[idx_guia + 1].upper() == "CIE":
             if re.match(r'^\d+$', data_list[idx_guia + 2]):
                 resultado_bbva["guia"] = data_list[idx_guia + 2]
-    except ValueError: pass # Guía CIE not found
+    except ValueError: pass
 
-    # Hora
     fecha_hora_str = _parsear_fecha_hora(data_list, meses_map)
     if fecha_hora_str:
         resultado_bbva["hora"] = fecha_hora_str
@@ -223,43 +192,34 @@ def _extraer_datos_ventamovil(data_list, meses_map):
     idx_monto_val = -1
     idx_folio_kw = -1
 
-    # 1. Encontrar Monto y su índice
     try:
         idx_monto_sym = data_list.index("$")
         if idx_monto_sym + 1 < len(data_list):
-            # Handle potential '.00' and check if the result is digits
             monto_cand = data_list[idx_monto_sym + 1].replace('.00', '')
             if re.match(r'^\d+$', monto_cand):
                resultado_ventamovil["monto"] = int(monto_cand)
                idx_monto_val = idx_monto_sym + 1
-    except ValueError: pass # '$' not found
+    except ValueError: pass
 
-    # 2. Encontrar Folio y el índice de la palabra "Folio"
     try:
         idx_folio_kw = data_list.index("Folio")
-        # Expect ':' after 'Folio', then the number
         if idx_folio_kw + 2 < len(data_list) and data_list[idx_folio_kw + 1] == ':':
             if re.match(r'^\d+$', data_list[idx_folio_kw + 2]):
                 resultado_ventamovil["folio"] = data_list[idx_folio_kw + 2]
-    except ValueError: pass # 'Folio' not found
+    except ValueError: pass
 
-    # 3. Encontrar Servicio y Referencia (expected between monto value and Folio keyword)
     if idx_monto_val != -1 and idx_folio_kw != -1 and idx_monto_val < idx_folio_kw:
         service_parts = []
         ref_parts = []
-        # Iterate through elements *between* the amount value and the 'Folio' keyword
         for i in range(idx_monto_val + 1, idx_folio_kw):
             elemento = data_list[i]
-            # Assume long digit sequences are reference, others are service name parts
-            if re.match(r'^\d{5,}$', elemento): # Heuristic: reference is usually long
+            if re.match(r'^\d{5,}$', elemento):
                 ref_parts.append(elemento)
-            # Check for letters/spaces/common punctuation, ignore symbols/short numbers
             elif re.match(r'^[A-Za-zÁÉÍÓÚÑáéíóúñ\s./-]+$', elemento) and not elemento.isdigit():
                 service_parts.append(elemento)
         if service_parts: resultado_ventamovil["servicio"] = " ".join(service_parts).strip()
         if ref_parts: resultado_ventamovil["referencia"] = "".join(ref_parts)
 
-    # 4. Extraer Hora
     fecha_hora_str = _parsear_fecha_hora(data_list, meses_map)
     if fecha_hora_str:
         resultado_ventamovil["hora"] = fecha_hora_str
@@ -267,81 +227,115 @@ def _extraer_datos_ventamovil(data_list, meses_map):
     return resultado_ventamovil
 
 def _extraer_datos_cashi(data_list, meses_map):
-    """Extrae datos específicos de recibos tipo Cashi/Otro (CSH...)."""
-    servicio:str = extraer_servicio(data_list)
-    resultado_cashi = {"servicio": servicio.upper()} # Default assumption for Cashi
+    """
+    Extrae datos específicos de recibos tipo Cashi.
+    Mejorada para extraer servicio usando la palabra clave 'Contrato'.
+    """
+    resultado_cashi = {}
 
-    # Referencia (Look for a likely contract number - often 12 digits, but be flexible)
-    # Prioritize longer digit sequences that aren't likely the folio or amount.
+    # --- Servicio: buscar basado en 'Contrato' ---
+    servicio = None
+    try:
+        idx_contrato = data_list.index("Contrato")
+        # Mirar elemento anterior
+        if idx_contrato > 0:
+            anterior = data_list[idx_contrato - 1].strip().upper()
+            # Limpiar posibles caracteres no alfabéticos (p.ej., puntos)
+            anterior_limpio = re.sub(r'[^A-ZÁÉÍÓÚÑ]', '', anterior)
+            if (anterior_limpio and len(anterior_limpio) >= 2 and
+                anterior_limpio not in PALABRAS_VACIAS):
+                servicio = anterior_limpio
+        # Si no, mirar elemento siguiente
+        if not servicio and idx_contrato + 1 < len(data_list):
+            siguiente = data_list[idx_contrato + 1].strip().upper()
+            siguiente_limpio = re.sub(r'[^A-ZÁÉÍÓÚÑ]', '', siguiente)
+            if (siguiente_limpio and len(siguiente_limpio) >= 2 and
+                siguiente_limpio not in PALABRAS_VACIAS):
+                servicio = siguiente_limpio
+    except ValueError:
+        pass
+
+    # Si no se encontró con 'Contrato', buscar servicios conocidos
+    if not servicio:
+        servicios_conocidos = {"CFE", "IZZI", "MEGACABLE", "VETV", "TELECOM", "TOTALPLAY", "DISH", "SKY"}
+        for elem in data_list:
+            elem_up = elem.upper()
+            if elem_up in servicios_conocidos:
+                servicio = elem_up
+                break
+
+    # Último recurso: contar repeticiones en primeros 14, excluyendo palabras vacías
+    if not servicio:
+        primeros_14 = data_list[:14]
+        frec = {}
+        for elem in primeros_14:
+            elem_up = elem.upper()
+            if elem_up in PALABRAS_VACIAS or not re.match(r'^[A-ZÁÉÍÓÚÑ]+$', elem_up):
+                continue
+            frec[elem_up] = frec.get(elem_up, 0) + 1
+        if frec:
+            servicio = max(frec, key=frec.get)
+
+    if servicio:
+        resultado_cashi["servicio"] = servicio
+
+    # --- Referencia: números largos (>=10 dígitos) ---
     ref_cand = None
-    possible_refs = [item for item in data_list if re.match(r'^\d{10,}$', item)] # At least 10 digits
+    possible_refs = [item for item in data_list if re.match(r'^\d{10,}$', item)]
     if possible_refs:
-        # Avoid picking something that looks like a folio if folio extraction works later
-        # For now, just take the first long digit sequence found
-        ref_cand = possible_refs[0] # Simple approach
-        if ref_cand: resultado_cashi["referencia"] = ref_cand
+        ref_cand = possible_refs[0]
+        resultado_cashi["referencia"] = ref_cand
 
-
-    # Monto (positive, often preceded by '$')
+    # --- Monto ---
     try:
         monto_str = None
-        # Search backwards for '$' then grab the next element
-        for i in range(len(data_list) - 1, 0, -1): # Start from end, go to index 1
-             if data_list[i-1] == '$': # Check element before current index
-                 potential_monto = data_list[i]
-                 # Allow optional sign, digits, optional comma separators, optional decimal part
-                 monto_match = re.match(r'(-?)(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?', potential_monto)
-                 if monto_match:
-                     sign, integer_part, decimal_part = monto_match.groups()
-                     # Reconstruct the number string without commas
-                     monto_str = integer_part.replace(',', '') + (decimal_part if decimal_part else '')
-                     # Prefer the last '$' amount found when searching backwards
-                     break
+        for i in range(len(data_list) - 1, 0, -1):
+            if data_list[i-1] == '$':
+                potential_monto = data_list[i]
+                monto_match = re.match(r'(-?)(\d{1,3}(?:,\d{3})*|\d+)(\.\d+)?', potential_monto)
+                if monto_match:
+                    sign, integer_part, decimal_part = monto_match.groups()
+                    monto_str = integer_part.replace(',', '') + (decimal_part if decimal_part else '')
+                    break
         if monto_str:
-            resultado_cashi["monto"] = int(float(monto_str)) # Convert cleaned string
-    except Exception: pass # Catch potential errors during search/conversion
+            resultado_cashi["monto"] = int(float(monto_str))
+    except Exception: pass
 
-    # Folio (Often near 'autorización' or 'No. de orden', or a specific length digit sequence)
+    # --- Folio ---
     folio_cand = None
     try:
-        # Strategy 1: Look for 'No.' 'de' 'autorización' followed by digits
+        # Estrategia 1: cerca de 'autorización'
         idx_aut_kw = -1
         for i in range(len(data_list) - 2):
             if (data_list[i].lower() == "no." and
                 data_list[i+1].lower() == "de" and
                 data_list[i+2].lower() == "autorización"):
                 idx_aut_kw = i + 2
-                # Look immediately after the sequence
                 if idx_aut_kw + 1 < len(data_list) and re.match(r'^\d{6,}$', data_list[idx_aut_kw+1]):
                     folio_cand = data_list[idx_aut_kw+1]
                     break
-                # Look further ahead if immediate doesn't match (sometimes separated by other words)
                 elif idx_aut_kw + 3 < len(data_list) and re.match(r'^\d{6,}$', data_list[idx_aut_kw+3]):
-                     folio_cand = data_list[idx_aut_kw+3]
-                     break
+                    folio_cand = data_list[idx_aut_kw+3]
+                    break
                 elif idx_aut_kw + 4 < len(data_list) and re.match(r'^\d{6,}$', data_list[idx_aut_kw+4]):
-                     folio_cand = data_list[idx_aut_kw+4]
-                     break
+                    folio_cand = data_list[idx_aut_kw+4]
+                    break
 
-        # Strategy 2: Look for a 6-digit number between 'autorización' and 'CSH...' if Strategy 1 failed
+        # Estrategia 2: número de 6 dígitos entre 'autorización' y 'CSH...'
         if not folio_cand:
             idx_aut = -1
             idx_csh = -1
             try:
-                # Find last occurrence of 'autorización'
                 idx_aut = max(i for i, item in enumerate(data_list) if item.lower() == "autorización")
-                # Find first occurrence of 'CSH...' *after* 'autorización'
                 idx_csh = next(i for i, item in enumerate(data_list) if item.startswith("CSH") and i > idx_aut)
-
-                # Search between these indices for a 6-digit number (allow optional dots)
                 for i in range(idx_aut + 1, idx_csh):
-                     match_folio = re.match(r'^(\d{6})\.?$', data_list[i])
-                     if match_folio:
-                         folio_cand = match_folio.group(1)
-                         break
-            except (ValueError, StopIteration): pass # Indices not found
+                    match_folio = re.match(r'^(\d{6})\.?$', data_list[i])
+                    if match_folio:
+                        folio_cand = match_folio.group(1)
+                        break
+            except (ValueError, StopIteration): pass
 
-        # Strategy 3: Fallback - Look for 'No.' 'de' 'orden' followed by digits
+        # Estrategia 3: cerca de 'orden'
         if not folio_cand:
             idx_ord_kw = -1
             for i in range(len(data_list) - 2):
@@ -349,134 +343,118 @@ def _extraer_datos_cashi(data_list, meses_map):
                     data_list[i+1].lower() == "de" and
                     data_list[i+2].lower() == "orden"):
                     idx_ord_kw = i + 2
-                    # Look immediately after
                     if idx_ord_kw + 1 < len(data_list) and re.match(r'^\d{6,}$', data_list[idx_ord_kw+1]):
                         folio_cand = data_list[idx_ord_kw+1]
                         break
-                    # Look further ahead
                     elif idx_ord_kw + 3 < len(data_list) and re.match(r'^\d{6,}$', data_list[idx_ord_kw+3]):
-                         folio_cand = data_list[idx_ord_kw+3]
-                         break
+                        folio_cand = data_list[idx_ord_kw+3]
+                        break
 
         if folio_cand:
             resultado_cashi["folio"] = folio_cand
-            # If reference wasn't found before, and folio looks different, update ref guess
-            if "referencia" not in resultado_cashi and possible_refs:
-                non_folio_refs = [p for p in possible_refs if p != folio_cand]
-                if non_folio_refs:
-                    resultado_cashi["referencia"] = non_folio_refs[0]
+            # Si la referencia coincide con el folio, buscar otra
+            if "referencia" in resultado_cashi and resultado_cashi["referencia"] == folio_cand:
+                # Tomar el siguiente número largo diferente
+                otros_refs = [r for r in possible_refs if r != folio_cand]
+                if otros_refs:
+                    resultado_cashi["referencia"] = otros_refs[0]
+                else:
+                    del resultado_cashi["referencia"]  # No hay otra candidata
 
+    except Exception: pass
 
-    except Exception: pass # Catch potential errors during folio search
-
-    # Hora
+    # --- Hora ---
     fecha_hora_str = _parsear_fecha_hora(data_list, meses_map)
     if fecha_hora_str:
         resultado_cashi["hora"] = fecha_hora_str
 
     return resultado_cashi
 
-
 def extraer_servicio(array):
     """
-    Toma los primeros 14 elementos de un array y cuenta cuántos se repiten.
-    
-    Args:
-        array: Lista de elementos (pueden ser strings, números, etc.)
-    
-    Returns:
-        dict: Diccionario con los elementos como claves y su frecuencia como valores
+    Versión original (se mantiene por compatibilidad, pero ya no se usa en cashi).
     """
-    # Tomar los primeros 14 elementos
     primeros_14 = array[:14]
-    
-    # Crear un diccionario para contar las frecuencias
     frecuencia = {}
-    
-    # Contar la frecuencia de cada elemento
     for elemento in primeros_14:
         if elemento in frecuencia:
             frecuencia[elemento] += 1
         else:
             frecuencia[elemento] = 1
-    
     repetidos = {k: v for k, v in frecuencia.items() if v > 1}
-    #print(f"\nElementos que se repiten ({len(repetidos)}):", repetidos)
-    return list(repetidos.keys())[0]
+    if repetidos:
+        return list(repetidos.keys())[0]
+    return None
 
 # --- Función Principal ---
 
 def extraer_datos_recibo(datos_entrada: list[str]) -> dict | None:
     """
     Extrae información estructurada de una lista de strings proveniente de un recibo.
-    Identifica el tipo de recibo y delega la extracción a funciones específicas.
-    Retorna un diccionario con los datos o None si no se puede procesar.
+    Retorna un diccionario con los datos ordenados como se solicita.
     """
     resultado = {}
-    datos_str_lower = " ".join(datos_entrada).lower() # For easier keyword checking
+    datos_str_lower = " ".join(datos_entrada).lower()
 
-    # Identificar tipo y llamar a la función extractora correspondiente
-    # Prioritize BBVA identification
     if "bbva" in datos_str_lower or "guía cie" in datos_str_lower:
-        # print("DEBUG: Detected as BBVA")
         resultado = _extraer_datos_bbva(datos_entrada, MESES)
     elif "ventamovil" in datos_str_lower or "recargame" in datos_str_lower:
-        # print("DEBUG: Detected as Ventamovil")
         resultado = _extraer_datos_ventamovil(datos_entrada, MESES)
-    # Check for Cashi identifiers ('cashi', 'CSH...')
     elif "cashi" in datos_str_lower or any(item.startswith("CSH") for item in datos_entrada):
-        # print("DEBUG: Detected as Cashi")
         resultado = _extraer_datos_cashi(datos_entrada, MESES)
     else:
-        # Tipo desconocido o no identificable por palabras clave principales
-        # print("DEBUG: Unknown type")
-        return None # O retornar {} si prefieres un diccionario vacío
+        return None
 
-    # Limpieza final: Crear diccionario final solo con valores no nulos/vacíos
+    # Limpiar valores vacíos y asegurar monto positivo
     final_result = {}
-    if resultado: # Check if extraction function returned something
-        for k, v in resultado.items():
-            if v is not None and v != "":
-                 final_result[k] = v
+    for k, v in resultado.items():
+        if v is not None and v != "":
+            final_result[k] = v
 
-    # Asegurarse que el monto sea positivo si existe y es numérico
     if final_result.get("monto") is not None:
         try:
-            # Ensure it's treated as a number before abs()
             numeric_monto = float(final_result["monto"])
             final_result["monto"] = abs(int(numeric_monto))
         except (ValueError, TypeError):
-             # If monto is somehow not numeric, remove it or log error
-             # print(f"WARN: Monto value '{final_result.get('monto')}' is not numeric.")
-             final_result.pop("monto", None)
+            final_result.pop("monto", None)
 
+    # Ordenar según el formato deseado (servicio, referencia, monto, folio, hora)
+    orden = ["servicio", "referencia", "monto", "folio", "hora"]
+    resultado_ordenado = {}
+    for key in orden:
+        if key in final_result:
+            resultado_ordenado[key] = final_result[key]
+    # Agregar cualquier otra clave que pueda existir (ej. convenio, guia) al final
+    for key, value in final_result.items():
+        if key not in resultado_ordenado:
+            resultado_ordenado[key] = value
 
-    # Retornar None si el diccionario resultante está vacío después de la limpieza
-    # O si no contiene información mínima requerida (e.g., monto or folio/guia/ref)
+    # Validar que tenga al menos un campo esencial
     required_keys = ["monto", "folio", "guia", "referencia", "convenio"]
-    if not final_result or not any(key in final_result for key in required_keys):
-        # print("DEBUG: Final result empty or lacks essential keys.")
+    if not resultado_ordenado or not any(key in resultado_ordenado for key in required_keys):
         return None
 
-    return final_result
+    return resultado_ordenado
 
 if __name__ == "__main__":
-    # --- Definición de tests como diccionario de arrays ---
     tests = {
-        "Cashi": ['8:58', 'M', '№', '63', '%', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '679950709602', '15', 'de', 'abril', '2025.', '08:58', 'a', '.', 'm', '.', 'CSHOSURLKU643173323', '$', '330.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '330.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '788145', 'CSHOSURLKU643173323', '-', '$', '330.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
         "Ventamovil": ['TRANSACCION', 'EXITOSA', '11/04/2025', '11:25:37', '$', '222', 'CFE', '01679121155098250424000000222', '8', 'Folio', ':', '723241591', 'Whatsapp', 'Compartir', 'Imprimir', '+', ':', '=', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
         "BBVA": ['BBVA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Número', 'de', 'convenio', '000582122', 'Referencia', '3250130454645662219', 'Importe', '73', 'Comisión', '$', '00.00', 'Concepto', 'Pago', 'servicio', 'de', 'agua', 'Fecha', 'de', 'operación', '31', 'de', 'marzo', 'de', '2025', ',', '09:24', 'p.m.', 'h', 'Guía', 'CIE', '0980620', 'Folio', '2444532488', 'Número', 'de', 'operación', '2444532488', 'BBVA', 'Origin', 'Cuenta', 'de', 'Ahorro', 'Número', 'de', 'cuenta', '•', '9123'],
         "Ventamovil 2": ['TRANSACCION', 'EXITOSA', '17/04/2025', '05:12:40', '$', '370', 'IZZI', 'TELECOM', '0372847228', 'Folio', ':', '105798858', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'Π', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
-        "Cashi 2": ['10:44', 'M.', '←', 'Recibo', 'CFE', 'CFE', 'CFE', 'Contrato', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', 'OMIMI', '11', '%', '679160508372', '16', 'de', 'febrero', '2025', '•', '12:19', 'p', '.', 'm', '.', 'CSHOSRSG8Y707269475', '$', '66.00', 'Gratis', 'cashi', 'Saldo', 'principal', '-', '$', '66.00', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '354815', 'CSHOSRSG8Y707269475', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.', '-', '$', '66.00'],
         "BBVA 2": ['BBVA', 'PAGAR', 'SERVICIO', 'OPERACION', 'EXITOSA', 'Servicio', 'GOB', 'EDO', 'OAX', '/', 'SRIA', '.', 'DE', 'FINANZAS', '/', 'Núm', '.', 'de', 'convenio', '000582122', 'Referencia', '3240362098244425201', 'Fecha', '10', 'diciembre', '2024', 'Hora', '23:42', 'h', 'Tipo', 'de', 'operación', 'Pagar', 'servicio', 'o', 'impuesto', 'Concepto', '3240362098244425201', 'Guía', 'CIE', '5973773', 'Folio', '2862930031', 'ORIGEN', 'Cuenta', 'corriente', '+9123', 'VALOR', 'Importe', '$', '144.00', 'Comisión', 'e', 'impuestos', '$', '0.00', 'Forma', 'de', 'pago', 'Cuenta', 'de', 'origen', 'Cuenta', 'corriente'],
         "Megacable": ['TRANSACCION', 'EXITOSA', '17/04/2025', '05:12:40', '$', '370', 'IZZI', 'TELECOM', '0372847228', 'Folio', ':', '105798858', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'Π', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'Ventamovil', '!'],
         "Vetv": ['TRANSACCION', 'EXITOSA', '04/01/2026', '01:37:17', '$', '269', 'VETV', '501247026120', 'Folio', ':', '3138313033', 'Whatsapp', 'Compartir', 'Imprimir', '+', 'NUEVA', 'INICIO', 'TRANSAC', '.', '¡', 'Gracias', 'por', 'formar', 'parte', 'de', 'la', 'familia', 'recargame', '-', 'app', '!'],
-        "Izzi": ['7:52', '<', '.izz', '!', 'Contrato', 'Izzi', 'Izzi', 'M.', 'Recibo', 'MIMI', '18', '%', 'O', '0372847228', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', '14', 'de', 'enero', '2026', '07:50', 'p.m.', 'CSHOT8VUGZ250138436', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '$', '470.00', 'Gratis', '-', '$', '470.00', 'Saldo', 'principal', 'cashi', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '818353', 'CSHOT8VUGZ250138436', '-', '$', '470.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.']
+        "Izzi": ['7:52', '<', '.izz', '!', 'Contrato', 'Izzi', 'Izzi', 'M.', 'Recibo', 'MIMI', '18', '%', 'O', '0372847228', 'DETALLES', 'DE', 'LA', 'TRANSACCIÓN', 'Fecha', 'y', 'hora', 'ID', '14', 'de', 'enero', '2026', '07:50', 'p.m.', 'CSHOT8VUGZ250138436', 'DETALLES', 'DEL', 'PAGO', 'Importe', 'Comisión', 'PAGASTE', 'CON', '$', '470.00', 'Gratis', '-', '$', '470.00', 'Saldo', 'principal', 'cashi', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', 'Total', '818353', 'CSHOT8VUGZ250138436', '-', '$', '470.00', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "SAPAO": ['BBVA', 'COMPROBANTE', 'DE', 'LA', 'OPERACIÓN', 'GENERAL', 'Tipo', 'de', 'operación', '62219', 'CIE', ':', '0582122', 'Fecha', 'de', 'operación', '31', 'marzo', '2025', ',', '21:15:00', 'h', 'Fecha', 'de', 'aplicación', '31', 'marzo', '2025', ',', '00:00:00', 'h', 'Número', 'de', 'convenio', '0582122', 'Referencia', '03250130454645662219', 'Guía', 'CIE', '0980620', 'IMPORTE', 'Importe', '$', '-73.00', 'ORIGEN', 'Cuenta', 'de', 'retiro', '⚫9123'],
+        "Cashi 3": ['Г', '.izz', '!', 'Izzi', 'Contrato', 'Recibo', 'Detalles', 'de', 'la', 'transacción', '15', 'de', 'febrero', '2026', '04:42', 'p', '.', 'm', '.', 'ID', ':', 'CSHOTAIV3G566157329', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '-', '$', '470.00', '0372847228', '$', '470,00', 'Gratis', '-', '$', '470.00', '892790', 'CSHOTAIV3G566157329', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Cashi 4": ['Г', 'Contrato', 'Megacable', 'Recibo', 'Detalles', 'de', 'la', 'transacción', '15', 'de', 'febrero', '2026', '06:24', 'p', '.', 'm', '.', 'ID', ':', 'CSHOTAIZTF051154440', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '-', '$', '350.00', '5230019571', '$', '350.00', 'Gratis', '-', '$', '350.00', '383386', 'CSHOTAIZTF051154440', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Cashi 5": ['<', 'CFE', 'CFE', 'Contrato', 'Detalles', 'de', 'la', 'transacción', 'Recibo', '-', '$', '216.00', '016791211550982506240000001884', '18', 'de', 'febrero', '2026', '09:30', 'a', '.', 'm', '.', 'ID', ':', 'CSHOTANV2X810163320', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '$', '216.00', 'Gratis', '-', '$', '216.00', '719831', 'CSHOTANV2X810163320', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Cashi 6": ['J', 'CFE', 'CFE', 'Contrato', 'Recibo', 'Detalles', 'de', 'la', 'transacción', '18', 'de', 'febrero', '2026', '03:28', 'p', '.', 'm', '.', 'ID', ':', 'CSHOTAOBNZ929150380', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '-', '$', '362.00', '679090107863', '$', '362.00', 'Gratis', '-', '$', '362.00', '404243', 'CSHOTAOBNZ929150380', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Cashi 7": ['CFE', 'CFE', 'Contrato', 'Recibo', 'Detalles', 'de', 'la', 'transacción', '19', 'de', 'febrero', '2026', '01:13', 'p', '.', 'm', '.', 'ID', ':', 'CSHOTAQ02J263151409', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '-', '$', '149.00', '679090416742', '$', '149.00', 'Gratis', '-', '$', '149.00', '996851', 'CSHOTAQ02J263151409', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
+        "Cashi 8": ['CFE', 'CFE', 'Contrato', 'Recibo', '-', '$', '168.00', '016799507099392506240000002370', 'Detalles', 'de', 'la', 'transacción', '19', 'de', 'febrero', '2026', '09:01', 'p', '.', 'm', '.', 'ID', ':', 'CSHOTAQLQB263153254', 'Detalles', 'del', 'pago', 'Importe', 'Comisión', 'Pagaste', 'con', 'cashi', 'Saldo', 'principal', 'No.', 'de', 'autorización', 'No.', 'de', 'orden', '$', '168.00', 'Gratis', '-', '$', '168.00', '067274', 'CSHOTAQLQB263153254', 'Tu', 'comprobante', 'quedará', 'guardado', 'en', 'tu', 'historial', 'de', 'movimientos', '.'],
     }
-    
-    # --- Ejecutar todos los tests iterando sobre el diccionario ---
+
     for test_name, test_data in tests.items():
         print(f"\n--- Test {test_name} ---")
         resultado = extraer_datos_recibo(test_data)
         print(resultado)
-
