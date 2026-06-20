@@ -189,8 +189,14 @@ def procesar_array(array: List[Dict[str, Any]]) -> Dict[str, Any]:
     if resultado_nuevo:
         resultado = resultado_nuevo
 
+    if resultado.get("servicio", "").lower() == "megacable" and "folio" in resultado:
+        folio = resultado["folio"]
+        if "Auth:" in folio:
+            resultado["folio"] = folio.split("Auth:")[-1].strip()
+        elif "Auth" in folio:
+            resultado["folio"] = folio.split("Auth")[-1].strip()
+
     return resultado if resultado else {}
-    return resultado
 
 def procesar_arrays_multiples(arrays: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """
