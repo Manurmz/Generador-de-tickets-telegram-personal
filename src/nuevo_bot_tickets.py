@@ -245,23 +245,25 @@ def obtener_folio_y_generar(message, info_personalizada):
         bot.reply_to(message, '❌ Ocurrió un error final al generar el ticket. Por favor, intenta de nuevo.')
 
 
-print('🚀 Ejecutando bot...')
+def main():
+    print('🚀 Ejecutando bot...')
+    user_id = env_vars.get("USER_ID_TELEGRAM")
+    if user_id:
+        try:
+            bot.send_message(
+                chat_id=user_id,
+                text="🤖 ¡Bot iniciado correctamente! Estoy online y listo para ayudar 😊"
+            )
+            print("✅ Mensaje de inicio enviado exitosamente!")
+        except telebot.apihelper.ApiTelegramException as e:
+            if e.result.status_code == 403:
+                print("⚠️  Advertencia: Usuario bloqueó el bot o nunca inició chat")
+            elif e.result.status_code == 400:
+                print("⚠️  Advertencia: ID de usuario inválido")
+            else:
+                print(f"⚠️  Error enviando mensaje de inicio: {e}")
+    print("📡 Iniciando polling...")
+    bot.infinity_polling()
 
-user_id = env_vars.get("USER_ID_TELEGRAM")
-if user_id:
-    try:
-        bot.send_message(
-            chat_id=user_id,
-            text="🤖 ¡Bot iniciado correctamente! Estoy online y listo para ayudar 😊"
-        )
-        print("✅ Mensaje de inicio enviado exitosamente!")
-    except telebot.apihelper.ApiTelegramException as e:
-        if e.result.status_code == 403:
-            print("⚠️  Advertencia: Usuario bloqueó el bot o nunca inició chat")
-        elif e.result.status_code == 400:
-            print("⚠️  Advertencia: ID de usuario inválido")
-        else:
-            print(f"⚠️  Error enviando mensaje de inicio: {e}")
-
-print("📡 Iniciando polling...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    main()

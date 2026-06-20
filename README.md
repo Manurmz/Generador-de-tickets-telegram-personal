@@ -6,8 +6,12 @@ Bot de Telegram que genera tickets/comprobantes de pago. Recibe una foto o PDF d
 
 ```
 ├── main.py                    # Punto de entrada: ejecuta el bot
+├── prueba.py                  # Menú interactivo de pruebas
 ├── src/                       # Código fuente activo
-│   ├── nuevo_bot_tickets.py   # Bot principal (Telegram)
+│   ├── nuevo_bot_tickets.py   # Bot principal (Telegram) — solo mensajería
+│   ├── estado_usuario.py      # Gestión de estado de usuario
+│   ├── procesar_recibo.py     # OCR + extracción de PDFs
+│   ├── generar_ticket.py      # Generación de PDF/imagen + impresión
 │   ├── paths.py               # Rutas de carpetas (project-root relativas)
 │   ├── crear_pdf.py           # Genera el ticket en PDF
 │   ├── crear_imagen.py        # Genera el ticket en PNG
@@ -34,7 +38,7 @@ Bot de Telegram que genera tickets/comprobantes de pago. Recibe una foto o PDF d
 ## Requisitos
 
 - **Python** 3.13+ (compatible con 3.14)
-- **Pip** o **[uv](https://docs.astral.sh/uv/)** para instalar dependencias
+- **[uv](https://docs.astral.sh/uv/)** para gestión de dependencias y entornos virtuales
 - **Google Cloud Vision API** habilitada y credenciales configuradas
 
 ## Configuración
@@ -44,13 +48,9 @@ Bot de Telegram que genera tickets/comprobantes de pago. Recibe una foto o PDF d
    cd "telebot tickets"
    ```
 
-2. **Instalar dependencias**:
+2. **Instalar dependencias** (incluye desarrollo):
    ```bash
-   pip install -r requirements.txt
-   ```
-   o con uv:
-   ```bash
-   uv sync
+   uv sync --dev
    ```
 
 3. **Configurar variables de entorno** (`./.env`):
@@ -70,20 +70,22 @@ Bot de Telegram que genera tickets/comprobantes de pago. Recibe una foto o PDF d
 
 Ejecutar el bot:
 ```bash
-python main.py
+uv run python main.py
+# o vía entry point:
+uv run telebot-tickets
 ```
 
 ## Pruebas
 
 Ejecutar tests con pytest:
 ```bash
-pytest tests/
-pytest tests/test_obtener_json.py -v
+uv run pytest tests/
+uv run pytest tests/test_obtener_json.py -v
 ```
 
 Menú interactivo de pruebas:
 ```bash
-python prueba.py
+uv run python prueba.py
 ```
 Este menú permite probar individualmente cada módulo del proyecto.
 
@@ -107,5 +109,4 @@ Este menú permite probar individualmente cada módulo del proyecto.
 1. **Credenciales de Google Cloud**: El archivo `permisos-personales.json` contiene una clave privada de service account. **No debe subirse a git.** Ya está en `.gitignore`.
 2. **Impresora térmica**: Requiere una impresora USB conectada. Los Vendor/Product IDs se configuran en `.env`. Verifica que las rutas USB coincidan con las de tu sistema.
 3. **Versión de Python**: `.python-version` indica 3.14, pero el proyecto funciona correctamente con 3.13. Se recomienda alinear ambas versiones.
-4. **Dos entornos virtuales**: Existen `venv/` y `.venv/`. Se recomienda eliminar uno y mantener solo el que uses.
-5. **Sin commits en git**: El proyecto está sin commits iniciales. Se recomienda hacer `git add` y `git commit` tras verificar que todo funciona.
+4. **Sin commits en git**: El proyecto está sin commits iniciales. Se recomienda hacer `git add` y `git commit` tras verificar que todo funciona.

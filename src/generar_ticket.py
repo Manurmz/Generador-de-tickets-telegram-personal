@@ -9,7 +9,8 @@ from impresora_termica import print_image_file
 def generar_ticket(data: dict) -> dict:
     nombre_pdf = crear_pdf(data)
     nombre_imagen = crear_imagen(data)
-    print_image_file(nombre_imagen)
+    if not print_image_file(nombre_imagen):
+        print("ℹ️  Ticket generado sin imprimir (impresora no disponible)")
     ruta_pdf = os.path.join(TICKETS_PDF_DIR, nombre_pdf)
 
     return {

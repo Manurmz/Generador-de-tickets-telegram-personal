@@ -13,6 +13,15 @@ PRODUCT_ID = int(env_vars.get("PRODUCT_ID"), 0)
 SHIFT_LEFT = 40  # Píxeles a desplazar hacia la izquierda
 # --------------------
 
+def detectar_impresora() -> bool:
+    try:
+        p = Usb(VENDOR_ID, PRODUCT_ID)
+        p._raw(b'\x1B\x40')
+        p.close()
+        return True
+    except Exception:
+        return False
+
 def print_image(printer, image_path):
     """Imprime una imagen desplazada hacia la izquierda"""
     # Mover posición de impresión hacia la izquierda
@@ -48,6 +57,10 @@ def print_image_file(filename):
     if not filename.lower().endswith('.png'):
         print(f"!!! ERROR: El archivo debe ser PNG")
         return False
+
+    if not detectar_impresora():
+        print("⚠️  Impresora no detectada. Se omite la impresión.")
+        return False
     
     try:
         # Inicializar impresora
@@ -81,6 +94,10 @@ def print_all_images():
     
     if not image_files:
         print("!!! No se encontraron imágenes para imprimir")
+        return False
+
+    if not detectar_impresora():
+        print("⚠️  Impresora no detectada. Se omite la impresión.")
         return False
     
     try:
